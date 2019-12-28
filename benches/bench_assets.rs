@@ -1,17 +1,9 @@
-#[macro_use]
-extern crate criterion;
-extern crate tar;
-extern crate xz2;
-
-extern crate ninja_build_syntax as manifest_syntax;
-extern crate test_data;
-
 use std::convert::AsRef;
 use std::io::Read;
 use std::ops::Deref;
 use std::path::Path;
 
-use criterion::Criterion;
+use criterion::{criterion_group, criterion_main, Criterion};
 
 fn bench_parse_assets(c: &mut Criterion) {
     let reader = xz2::read::XzDecoder::new(test_data::ASSETS_TAR);
@@ -20,7 +12,8 @@ fn bench_parse_assets(c: &mut Criterion) {
         .entries()
         .unwrap()
         .find(|entry| {
-            entry.as_ref().unwrap().path().unwrap().deref() == AsRef::<Path>::as_ref("assets/ninja/build.ninja")
+            entry.as_ref().unwrap().path().unwrap().deref()
+                == AsRef::<Path>::as_ref("assets/ninja/build.ninja")
         })
         .unwrap()
         .unwrap();
@@ -29,7 +22,7 @@ fn bench_parse_assets(c: &mut Criterion) {
 
     c.bench_function("parse_assets", move |b| {
         b.iter(|| {
-            let statements = manifest_syntax::parse(&data);
+            let statements = ninja_build_syntax::parse(&data);
 
             for statement in statements {
                 statement.unwrap();

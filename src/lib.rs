@@ -1,10 +1,7 @@
-#[macro_use]
-extern crate failure;
+use failure::Fail;
 
 #[macro_use]
 extern crate nom;
-
-extern crate byte_slice;
 
 use std::ffi::OsStr;
 use std::fmt;
