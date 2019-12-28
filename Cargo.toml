@@ -1,0 +1,23 @@
+[package]
+name = "ninja-build-syntax"
+version = "0.0.1"
+authors = ["Frank Benkstein <frank@benkstein.net>"]
+edition = "2018"
+
+[dependencies]
+# replace with bstr?
+byte-slice = { path = "byte-slice" }
+failure = "0.1"
+# upgrade to 5.0
+nom = "4.0.0"
+
+[dev-dependencies]
+test-data = { path = "test-data" }
+criterion = "0.2"
+xz2 = "0.1"
+tar = "0.4"
+crossbeam = "0.3"
+
+[[bench]]
+name = "bench_assets"
+harness = false
