@@ -3,6 +3,7 @@ name = "ninja-build-syntax"
 version = "0.0.1"
 authors = ["Frank Benkstein <frank@benkstein.net>"]
 edition = "2018"
+description = "Parser for ninja's manifest file format, i.e. `ninja.build` files."
 
 [dependencies]
 failure = "0.1"
