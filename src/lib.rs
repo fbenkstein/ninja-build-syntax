@@ -17,6 +17,8 @@ use nom::{is_alphanumeric, line_ending};
 
 use byte_slice::ByteSlice;
 
+mod byte_slice;
+
 #[cfg(unix)]
 pub fn string(s: ByteSlice) -> Option<&OsStr> {
     use std::os::unix::ffi::OsStrExt;

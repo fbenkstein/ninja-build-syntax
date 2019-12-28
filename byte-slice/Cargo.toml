@@ -1,8 +1,0 @@
-[package]
-name = "byte-slice"
-version = "0.0.0"
-authors = ["Frank Benkstein <frank@benkstein.net>"]
-publish = false
-
-[dependencies]
-nom = "4.0.0"

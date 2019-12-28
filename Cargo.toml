@@ -5,8 +5,6 @@ authors = ["Frank Benkstein <frank@benkstein.net>"]
 edition = "2018"
 
 [dependencies]
-# replace with bstr?
-byte-slice = { path = "byte-slice" }
 failure = "0.1"
 # upgrade to 5.0
 nom = "4.0.0"

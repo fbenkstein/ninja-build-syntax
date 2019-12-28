@@ -1,5 +1,3 @@
-extern crate nom;
-
 use std::fmt;
 use std::iter::{Enumerate, Map};
 use std::ops::{Deref, Range, RangeFrom, RangeFull, RangeTo};

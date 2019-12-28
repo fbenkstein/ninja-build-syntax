@@ -1,8 +1,6 @@
 use std::result;
 
-use nom;
-
-use byte_slice::ByteSlice;
+use crate::byte_slice::ByteSlice;
 
 type Error<'a> = nom::Err<ByteSlice<'a>>;
 type Result<'a, T> = result::Result<(ByteSlice<'a>, T), Error<'a>>;
