@@ -11,7 +11,7 @@ use nom::{
     character::{complete::line_ending, is_alphanumeric},
     combinator::{map, map_opt, opt},
     multi::{many0, many1},
-    sequence::{delimited, preceded, separated_pair, terminated, tuple},
+    sequence::{delimited, pair, preceded, separated_pair, terminated, tuple},
 };
 
 use std::ffi::OsStr;
@@ -59,16 +59,15 @@ fn whitespace(input: &[u8]) -> IResult<()> {
     map(many0(alt((tag("$\r\n"), tag("$\n"), tag(" ")))), |_| ())(input)
 }
 
-named_args!(
-    word<'a>(w: &str)<&'a [u8], ()>,
-    map!(
-        pair!(
-            tag!(w),
-            alt!(tag!(&b"$\r\n"[..]) | tag!(&b"$\n"[..]) | tag!(&b" "[..]))
-        ),
-        |_| ()
+fn word<'a, Input: 'a>(w: &'a str) -> impl Fn(Input) -> nom::IResult<Input, ()> + 'a
+where
+    Input: nom::InputTake + nom::Compare<&'a str> + Clone,
+{
+    map(
+        pair(tag(w), alt((tag("$\r\n"), tag("$\n"), tag(" ")))),
+        |_| (),
     )
-);
+}
 
 macro_rules! ignore_whitespace (
     ($i:expr, $($args:tt)*) => (
@@ -448,7 +447,7 @@ named!(
     rule<&[u8], Rule>,
     map!(
         pair!(
-            delimited!(call!(word, "rule"), ignore_whitespace!(identifier), line_ending),
+            delimited!(word("rule"), ignore_whitespace!(identifier), line_ending),
             bindings
         ),
         |(name, bindings)| Rule { name, bindings }
@@ -472,7 +471,7 @@ pub struct Build<'a> {
 named!(
     build<&[u8], Build>,
     do_parse!(
-        outputs: preceded!(call!(word, "build"), paths1) >>
+        outputs: preceded!(word("build"), paths1) >>
         implicit_outputs: opt!(preceded!(tag!(&b"|"[..]), paths1)) >>
         rule: preceded!(tag!(&b":"[..]), ignore_whitespace!(identifier)) >>
         inputs: paths0 >>
@@ -572,7 +571,7 @@ named!(
     default<&[u8], Default>,
     map!(
         terminated!(
-            preceded!(call!(word, "default"), ignore_whitespace!(many1!(path))),
+            preceded!(word("default"), ignore_whitespace!(many1!(path))),
             line_ending
         ),
         |targets| Default { targets }
@@ -613,10 +612,10 @@ named!(
     include<&[u8], Include>,
     terminated!(
         alt!(
-            preceded!(call!(word, "include"), ignore_whitespace!(path)) => {
+            preceded!(word("include"), ignore_whitespace!(path)) => {
                 |path| Include { path, new_scope: false }
             } |
-            preceded!(call!(word, "subninja"), ignore_whitespace!(path)) => {
+            preceded!(word("subninja"), ignore_whitespace!(path)) => {
                 |path| Include { path, new_scope: true }
             }
         ),
@@ -666,7 +665,7 @@ fn indent(input: &[u8]) -> IResult<usize> {
 
 #[cfg_attr(rustfmt, rustfmt_skip)]
 named!(pool<&[u8], Pool>, do_parse!(
-    name: delimited!(call!(word, "pool"), ignore_whitespace!(identifier), line_ending) >>
+    name: delimited!(word("pool"), ignore_whitespace!(identifier), line_ending) >>
     _indent: indent >>
     // Technically ninja allows multiple depth values and just takes the last
     // one.
