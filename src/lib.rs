@@ -11,7 +11,7 @@ use nom::{
     character::{complete::line_ending, is_alphanumeric},
     combinator::{map, map_opt, opt},
     multi::{many0, many1},
-    sequence::{delimited, preceded, terminated},
+    sequence::{delimited, preceded, separated_pair, terminated, tuple},
 };
 
 use std::ffi::OsStr;
@@ -280,19 +280,22 @@ pub struct Binding<'a> {
     pub value: Value<'a>,
 }
 
-named!(
-    binding<&[u8], Binding>,
-    map!(
-        terminated!(
-            separated_pair!(identifier, ignore_whitespace!(tag!(&b"="[..])), value),
-            line_ending
+fn binding(input: &[u8]) -> IResult<Binding> {
+    map(
+        terminated(
+            separated_pair(
+                identifier,
+                tuple((opt(whitespace), tag("="), opt(whitespace))),
+                value,
+            ),
+            line_ending,
         ),
-        |(name, value)| Binding { name, value }
-    )
-);
+        |(name, value)| Binding { name, value },
+    )(input)
+}
 
 #[cfg(test)]
-// #[test]
+#[test]
 fn test_binding() {
     test_parse!(
         binding(b"abc=def\n"),
@@ -348,10 +351,12 @@ fn test_binding() {
     );
 }
 
-named!(bindings<&[u8], Vec<Binding>>, many1!(preceded!(indent, binding)));
+fn bindings(input: &[u8]) -> IResult<Vec<Binding>> {
+    many1(preceded(indent, binding))(input)
+}
 
 #[cfg(test)]
-// #[test]
+#[test]
 fn test_bindings() {
     test_parse_error!(bindings(b""));
     test_parse!(
@@ -655,12 +660,9 @@ pub struct Pool<'a> {
     pub depth: Value<'a>,
 }
 
-named!(
-    indent<&[u8], usize>,
-    map!(is_a!(" "), |data| {
-        data.len()
-    })
-);
+fn indent(input: &[u8]) -> IResult<usize> {
+    map(is_a(" "), <[u8]>::len)(input)
+}
 
 #[cfg_attr(rustfmt, rustfmt_skip)]
 named!(pool<&[u8], Pool>, do_parse!(
