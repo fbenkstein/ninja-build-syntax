@@ -11,7 +11,7 @@ use nom::{
     character::{complete::line_ending, is_alphanumeric},
     combinator::{map, map_opt, opt},
     multi::{many0, many1},
-    sequence::{delimited, preceded},
+    sequence::{delimited, preceded, terminated},
 };
 
 use std::ffi::OsStr;
@@ -249,10 +249,13 @@ fn path(input: &[u8]) -> IResult<Value> {
     )(input)
 }
 
-// fn paths0(input: &[u8]) -> Vec<Value> {}
+fn paths0(input: &[u8]) -> IResult<Vec<Value>> {
+    terminated(many0(preceded(opt(whitespace), path)), opt(whitespace))(input)
+}
 
-named!(paths0<&[u8], Vec<Value>>, ignore_whitespace!(many0!(path)));
-named!(paths1<&[u8], Vec<Value>>, ignore_whitespace!(many1!(path)));
+fn paths1(input: &[u8]) -> IResult<Vec<Value>> {
+    terminated(many1(preceded(opt(whitespace), path)), opt(whitespace))(input)
+}
 
 #[cfg(test)]
 #[test]
