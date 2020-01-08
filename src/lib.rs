@@ -632,23 +632,36 @@ pub struct Include<'a> {
     pub new_scope: bool,
 }
 
-named!(
-    include<&[u8], Include>,
-    terminated!(
-        alt!(
-            preceded!(word("include"), ignore_whitespace!(path)) => {
-                |path| Include { path, new_scope: false }
-            } |
-            preceded!(word("subninja"), ignore_whitespace!(path)) => {
-                |path| Include { path, new_scope: true }
-            }
-        ),
-        line_ending
-    )
-);
+fn include(input: &[u8]) -> IResult<Include> {
+    terminated(
+        alt((
+            map(
+                preceded(
+                    word("include"),
+                    delimited(opt(whitespace), path, opt(whitespace)),
+                ),
+                |path| Include {
+                    path,
+                    new_scope: false,
+                },
+            ),
+            map(
+                preceded(
+                    word("subninja"),
+                    delimited(opt(whitespace), path, opt(whitespace)),
+                ),
+                |path| Include {
+                    path,
+                    new_scope: true,
+                },
+            ),
+        )),
+        line_ending,
+    )(input)
+}
 
 #[cfg(test)]
-// #[test]
+#[test]
 fn test_include() {
     test_parse!(
         include(b"include rules.ninja\n"),
