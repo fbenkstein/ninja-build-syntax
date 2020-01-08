@@ -589,19 +589,21 @@ pub struct Default<'a> {
     pub targets: Vec<Value<'a>>,
 }
 
-named!(
-    default<&[u8], Default>,
-    map!(
-        terminated!(
-            preceded!(word("default"), ignore_whitespace!(many1!(path))),
-            line_ending
+fn default(input: &[u8]) -> IResult<Default> {
+    map(
+        terminated(
+            preceded(
+                word("default"),
+                delimited(opt(whitespace), paths1, opt(whitespace)),
+            ),
+            line_ending,
         ),
-        |targets| Default { targets }
-    )
-);
+        |targets| Default { targets },
+    )(input)
+}
 
 #[cfg(test)]
-// #[test]
+#[test]
 fn test_default() {
     test_parse!(
         default(b"default all\n"),
