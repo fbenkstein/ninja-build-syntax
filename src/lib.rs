@@ -470,33 +470,52 @@ pub struct Build<'a> {
     pub bindings: Vec<Binding<'a>>,
 }
 
-#[cfg_attr(rustfmt, rustfmt_skip)]
-named!(
-    build<&[u8], Build>,
-    do_parse!(
-        outputs: preceded!(word("build"), paths1) >>
-        implicit_outputs: opt!(preceded!(tag!(&b"|"[..]), paths1)) >>
-        rule: preceded!(tag!(&b":"[..]), ignore_whitespace!(identifier)) >>
-        inputs: paths0 >>
-        implicit_inputs: opt!(preceded!(tag!(&b"|"[..]), paths1)) >>
-        order_only_inputs: opt!(preceded!(tag!(&b"||"[..]), paths1)) >>
-        _newline: line_ending >>
-        bindings: opt!(bindings) >> (
+fn opt_default<I: Clone, O: std::default::Default, E: nom::error::ParseError<I>, F>(
+    f: F,
+) -> impl Fn(I) -> nom::IResult<I, O, E>
+where
+    F: Fn(I) -> nom::IResult<I, O, E>,
+{
+    map(opt(f), Option::unwrap_or_default)
+}
+
+fn build(input: &[u8]) -> IResult<Build> {
+    map(
+        tuple((
+            preceded(word("build"), paths1),
+            opt_default(preceded(tag("|"), paths1)),
+            preceded(tag(":"), delimited(whitespace, identifier, whitespace)),
+            paths0,
+            opt_default(preceded(tag("|"), paths1)),
+            opt_default(preceded(tag("||"), paths1)),
+            line_ending,
+            opt_default(bindings),
+        )),
+        |(
+            outputs,
+            implicit_outputs,
+            rule,
+            inputs,
+            implicit_inputs,
+            order_only_inputs,
+            _newline,
+            bindings,
+        )| {
             Build {
                 outputs,
-                implicit_outputs: implicit_outputs.unwrap_or_else(Vec::new),
+                implicit_outputs,
                 rule,
                 inputs,
-                implicit_inputs: implicit_inputs.unwrap_or_else(Vec::new),
-                order_only_inputs: order_only_inputs.unwrap_or_else(Vec::new),
-                bindings: bindings.unwrap_or_else(Vec::new),
+                implicit_inputs,
+                order_only_inputs,
+                bindings,
             }
-        )
-    )
-);
+        },
+    )(input)
+}
 
 #[cfg(test)]
-// #[test]
+#[test]
 fn test_build() {
     test_parse!(
         build(b"build foo.o:cc foo.c\n"),
