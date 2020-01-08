@@ -443,16 +443,19 @@ pub struct Rule<'a> {
     pub bindings: Vec<Binding<'a>>,
 }
 
-named!(
-    rule<&[u8], Rule>,
-    map!(
-        pair!(
-            delimited!(word("rule"), ignore_whitespace!(identifier), line_ending),
-            bindings
+fn rule(input: &[u8]) -> IResult<Rule> {
+    map(
+        pair(
+            delimited(
+                word("rule"),
+                delimited(opt(whitespace), identifier, opt(whitespace)),
+                line_ending,
+            ),
+            bindings,
         ),
-        |(name, bindings)| Rule { name, bindings }
-    )
-);
+        |(name, bindings)| Rule { name, bindings },
+    )(input)
+}
 
 // TODO: add test_rule
 
