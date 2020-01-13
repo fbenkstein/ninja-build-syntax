@@ -748,18 +748,17 @@ pub enum Statement<'a> {
     Comment(Comment<'a>),
 }
 
-named!(
-    statement<&[u8], Statement>,
-    alt!(
-        rule => { Statement::Rule } |
-        build => { Statement::Build } |
-        binding => { Statement::Binding } |
-        default => { Statement::Default } |
-        include => { Statement::Include } |
-        pool => { Statement::Pool } |
-        comment => { Statement::Comment }
-    )
-);
+fn statement(input: &[u8]) -> IResult<Statement> {
+    alt((
+        map(rule, Statement::Rule),
+        map(build, Statement::Build),
+        map(binding, Statement::Binding),
+        map(default, Statement::Default),
+        map(include, Statement::Include),
+        map(pool, Statement::Pool),
+        map(comment, Statement::Comment),
+    ))(input)
+}
 
 pub struct Statements<'a> {
     data: &'a [u8],
