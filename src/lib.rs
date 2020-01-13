@@ -7,7 +7,7 @@ extern crate nom;
 
 use nom::{
     branch::alt,
-    bytes::complete::{is_a, is_not, tag, take_while1},
+    bytes::complete::{is_a, is_not, tag, take_while, take_while1},
     character::{complete::line_ending, is_alphanumeric},
     combinator::{map, map_opt, opt},
     multi::{many0, many1},
@@ -720,16 +720,15 @@ fn test_pool() {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Comment<'a>(pub &'a [u8]);
 
-named!(
-    comment<&[u8], Comment>,
-    map!(
-        delimited!(tag!(&b"#"[..]), take_while!(|c| c != b'\n'), line_ending),
-        Comment
-    )
-);
+fn comment(input: &[u8]) -> IResult<Comment> {
+    map(
+        delimited(tag("#"), take_while(|c| c != b'\n'), line_ending),
+        Comment,
+    )(input)
+}
 
 #[cfg(test)]
-// #[test]
+#[test]
 fn test_comment() {
     test_parse!(
         comment(&b"# this is a comment\n"[..]),
