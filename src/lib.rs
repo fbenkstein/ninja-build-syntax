@@ -69,24 +69,6 @@ where
     )
 }
 
-macro_rules! ignore_whitespace (
-    ($i:expr, $($args:tt)*) => (
-        {
-            use nom::Err;
-
-            match sep!($i, whitespace, $($args)*) {
-                Err(e) => Err(e),
-                Ok((i1, o)) => {
-                    match whitespace(i1) {
-                        Err(e) => Err(Err::convert(e)),
-                        Ok((i2, _))    => Ok((i2, o))
-                    }
-                }
-            }
-        }
-    )
-);
-
 fn is_simple_identifier_character(c: u8) -> bool {
     is_alphanumeric(c) || c == b'_' || c == b'-'
 }
@@ -701,23 +683,25 @@ fn indent(input: &[u8]) -> IResult<usize> {
 }
 
 #[cfg_attr(rustfmt, rustfmt_skip)]
-named!(pool<&[u8], Pool>, do_parse!(
-    name: delimited!(word("pool"), ignore_whitespace!(identifier), line_ending) >>
-    _indent: indent >>
-    // Technically ninja allows multiple depth values and just takes the last
-    // one.
-    depth: ignore_whitespace!(delimited!(
-        pair!(
-            tag!(&b"depth"[..]), tag!(&b"="[..])
+fn pool(input: &[u8]) -> IResult<Pool> {
+    map(
+        separated_pair(
+            delimited(
+                word("pool"),
+                delimited(opt(whitespace), identifier, opt(whitespace)),
+                line_ending,
+            ),
+            indent,
+            // Technically ninja allows multiple depth values and just takes the
+            // last one.
+            map_opt(binding, |Binding{ name, value }| if name == Identifier("depth") { Some(value) } else { None }),
         ),
-        value,
-        line_ending
-    )) >>
-    ( Pool{ name, depth } )
-));
+        |(name, value)| Pool{ name, depth: value },
+    )(input)
+}
 
 #[cfg(test)]
-// #[test]
+#[test]
 fn test_pool() {
     test_parse!(
         pool(b"pool link\n    depth = 3\n"),
