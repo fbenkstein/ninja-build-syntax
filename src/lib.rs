@@ -2,9 +2,6 @@
 
 use failure::Fail;
 
-#[macro_use]
-extern crate nom;
-
 use nom::{
     branch::alt,
     bytes::complete::{is_a, is_not, tag, take_while, take_while1},
@@ -800,7 +797,7 @@ impl<'a> Iterator for Statements<'a> {
                 return None;
             }
 
-            let result = alt!(self.data, statement => { Some } | line_ending => { |_| None } );
+            let result = alt((map(statement, Some), map(line_ending, |_| None)))(self.data);
 
             match result {
                 Ok((rest, statement)) => {
