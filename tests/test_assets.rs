@@ -1,8 +1,6 @@
-#![allow(dead_code)]
-
 use std::io::Read;
 
-// #[test]
+#[test]
 fn parse_assets_syntax_only() {
     let reader = xz2::read::XzDecoder::new(test_data::ASSETS_TAR);
     let mut archive = tar::Archive::new(reader);
