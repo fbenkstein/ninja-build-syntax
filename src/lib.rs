@@ -1,7 +1,13 @@
 use failure::Fail;
 
-#[macro_use]
-extern crate nom;
+use nom::{
+    branch::alt,
+    bytes::complete::{is_a, is_not, tag, take_while, take_while1},
+    character::{complete::line_ending, is_alphanumeric},
+    combinator::{map, map_opt, opt},
+    multi::{many0, many1},
+    sequence::{delimited, pair, preceded, separated_pair, terminated, tuple},
+};
 
 use std::ffi::OsStr;
 use std::fmt;
@@ -13,29 +19,25 @@ use std::str::from_utf8;
 #[macro_use]
 mod test_macros;
 
-use nom::{is_alphanumeric, line_ending};
-
-use byte_slice::ByteSlice;
-
-mod byte_slice;
+type IResult<'a, T> = nom::IResult<&'a [u8], T>;
 
 #[cfg(unix)]
-pub fn string(s: ByteSlice) -> Option<&OsStr> {
+pub fn string(s: &[u8]) -> Option<&OsStr> {
     use std::os::unix::ffi::OsStrExt;
-    Some(OsStr::from_bytes(s.0))
+    Some(OsStr::from_bytes(s))
 }
 
 #[cfg(windows)]
-pub fn string(s: ByteSlice) -> Option<&OsStr> {
+pub fn string(s: &[u8]) -> Option<&OsStr> {
     // TODO: disallow non-whitespace control characters
-    if s.0.iter().all(u8::is_ascii) {
+    if s.iter().all(u8::is_ascii) {
         Some(from_utf8(s).unwrap().as_ref())
     } else {
         None
     }
 }
 
-pub fn nonempty_string(s: ByteSlice) -> Option<&OsStr> {
+pub fn nonempty_string(s: &[u8]) -> Option<&OsStr> {
     if !s.is_empty() {
         string(s)
     } else {
@@ -43,47 +45,24 @@ pub fn nonempty_string(s: ByteSlice) -> Option<&OsStr> {
     }
 }
 
+// TODO: get rid off this function and eliminate empty strings
 fn empty_string() -> &'static OsStr {
     "".as_ref()
 }
 
-named!(
-    whitespace<ByteSlice, ()>,
-    map!(
-        many0!(alt!(tag!(&b"$\r\n"[..]) | tag!(&b"$\n"[..]) | tag!(&b" "[..]))),
-        |_| ()
-    )
-);
+fn whitespace(input: &[u8]) -> IResult<()> {
+    map(many0(alt((tag("$\r\n"), tag("$\n"), tag(" ")))), |_| ())(input)
+}
 
-named_args!(
-    word<'a>(w: &str)<ByteSlice<'a>, ()>,
-    map!(
-        pair!(
-            tag!(w),
-            alt!(tag!(&b"$\r\n"[..]) | tag!(&b"$\n"[..]) | tag!(&b" "[..]))
-        ),
-        |_| ()
+fn word<'a, Input: 'a>(w: &'a str) -> impl Fn(Input) -> nom::IResult<Input, ()> + 'a
+where
+    Input: nom::InputTake + nom::Compare<&'a str> + Clone,
+{
+    map(
+        pair(tag(w), alt((tag("$\r\n"), tag("$\n"), tag(" ")))),
+        |_| (),
     )
-);
-
-macro_rules! ignore_whitespace (
-    ($i:expr, $($args:tt)*) => (
-        {
-            use nom::Convert;
-            use nom::Err;
-
-            match sep!($i, whitespace, $($args)*) {
-                Err(e) => Err(e),
-                Ok((i1, o)) => {
-                    match whitespace(i1) {
-                        Err(e) => Err(Err::convert(e)),
-                        Ok((i2, _))    => Ok((i2, o))
-                    }
-                }
-            }
-        }
-    )
-);
+}
 
 fn is_simple_identifier_character(c: u8) -> bool {
     is_alphanumeric(c) || c == b'_' || c == b'-'
@@ -96,18 +75,17 @@ fn is_identifier_character(c: u8) -> bool {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Identifier<'a>(pub &'a str);
 
-named!(
-    pub identifier<ByteSlice, Identifier>,
-    map!(take_while1!(is_identifier_character), |s| Identifier(from_utf8(s.0).unwrap()))
-);
+fn identifier(input: &[u8]) -> IResult<Identifier> {
+    map(take_while1(is_identifier_character), |s| {
+        Identifier(from_utf8(s).unwrap())
+    })(input)
+}
 
-named!(
-    simple_identifier<ByteSlice, Identifier>,
-    map!(
-        take_while1!(is_simple_identifier_character),
-        |s| Identifier(from_utf8(s.0).unwrap())
-    )
-);
+fn simple_identifier(input: &[u8]) -> IResult<Identifier> {
+    map(take_while1(is_simple_identifier_character), |s| {
+        Identifier(from_utf8(s).unwrap())
+    })(input)
+}
 
 #[cfg(test)]
 #[test]
@@ -151,64 +129,29 @@ impl<'a> IntoIterator for &'a Value<'a> {
     }
 }
 
-#[cfg_attr(rustfmt, rustfmt_skip)]
-named!(
-    pub value<ByteSlice, Value>,
-    map!(
-        many0!(alt!(
-            map_opt!(is_not!(&b"$\r\n"[..]), nonempty_string) => {
-                ValuePiece::Plain
-            } |
-            map_opt!(preceded!(tag!(&b"$"[..]), is_a!(&b"$ |:"[..])), string) => {
-                ValuePiece::Plain
-            } |
-            preceded!(
-                alt!(tag!(&b"$\n"[..]) | tag!(&b"$\r\n"[..])),
-                opt!(is_a!(&b" "[..]))
-            ) => {
-                |_| ValuePiece::Plain(empty_string())
-            } |
-            delimited!(tag!(&b"${"[..]), identifier, tag!(&b"}"[..])) => {
-                |Identifier(x)| ValuePiece::Evaluated(x)
-            } |
-            preceded!(tag!(&b"$"[..]), simple_identifier) => {
-                |Identifier(x)| ValuePiece::Evaluated(x)
-            }
-        )),
-        Value
-    )
-);
-
-#[cfg_attr(rustfmt, rustfmt_skip)]
-named!(
-    path<ByteSlice, Value>,
-    map!(
-        many1!(alt!(
-            map_opt!(is_not!(&b"$ :\r\n|\0"[..]), nonempty_string) => {
-                ValuePiece::Plain
-            } |
-            map_opt!(preceded!(tag!(&b"$"[..]), is_a!(&b"$ |:"[..])), string) => {
-                ValuePiece::Plain
-            } |
-            preceded!(
-                alt!(tag!(&b"$\n"[..]) | tag!(&b"$\r\n"[..])),
-                opt!(is_a!(" "))
-            ) => {
-                |_| ValuePiece::Plain(empty_string())
-            } |
-            delimited!(tag!(&b"${"[..]), identifier, tag!(&b"}"[..])) => {
-                |Identifier(x)| ValuePiece::Evaluated(x)
-            } |
-            preceded!(tag!(&b"$"[..]), simple_identifier) => {
-                |Identifier(x)| ValuePiece::Evaluated(x)
-            }
-        )),
-        Value
-    )
-);
-
-named!(paths0<ByteSlice, Vec<Value>>, ignore_whitespace!(many0!(path)));
-named!(paths1<ByteSlice, Vec<Value>>, ignore_whitespace!(many1!(path)));
+fn value(input: &[u8]) -> IResult<Value> {
+    map(
+        many0(alt((
+            map(map_opt(is_not("$\r\n"), nonempty_string), ValuePiece::Plain),
+            map(
+                map_opt(preceded(tag("$"), is_a("$ |:")), string),
+                ValuePiece::Plain,
+            ),
+            map(
+                preceded(alt((tag("$\n"), tag("$\r\n"))), opt(is_a(" "))),
+                |_| ValuePiece::Plain(empty_string()),
+            ),
+            map(
+                delimited(tag("${"), identifier, tag("}")),
+                |Identifier(x)| ValuePiece::Evaluated(x),
+            ),
+            map(preceded(tag("$"), simple_identifier), |Identifier(x)| {
+                ValuePiece::Evaluated(x)
+            }),
+        ))),
+        Value,
+    )(input)
+}
 
 #[cfg(test)]
 #[test]
@@ -255,6 +198,41 @@ fn test_value() {
     test_parse!(value(b"abc\n"), value![plain!(b"abc")], b"\n");
 }
 
+fn path(input: &[u8]) -> IResult<Value> {
+    map(
+        many1(alt((
+            map(
+                map_opt(is_not("$ :\r\n|\0"), nonempty_string),
+                ValuePiece::Plain,
+            ),
+            map(
+                map_opt(preceded(tag("$"), is_a("$ |:")), string),
+                ValuePiece::Plain,
+            ),
+            map(
+                preceded(alt((tag("$\n"), tag("$\r\n"))), opt(is_a(" "))),
+                |_| ValuePiece::Plain(empty_string()),
+            ),
+            map(
+                delimited(tag("${"), identifier, tag("}")),
+                |Identifier(x)| ValuePiece::Evaluated(x),
+            ),
+            map(preceded(tag("$"), simple_identifier), |Identifier(x)| {
+                ValuePiece::Evaluated(x)
+            }),
+        ))),
+        Value,
+    )(input)
+}
+
+fn paths0(input: &[u8]) -> IResult<Vec<Value>> {
+    terminated(many0(preceded(opt(whitespace), path)), opt(whitespace))(input)
+}
+
+fn paths1(input: &[u8]) -> IResult<Vec<Value>> {
+    terminated(many1(preceded(opt(whitespace), path)), opt(whitespace))(input)
+}
+
 #[cfg(test)]
 #[test]
 fn test_path() {
@@ -278,16 +256,19 @@ pub struct Binding<'a> {
     pub value: Value<'a>,
 }
 
-named!(
-    binding<ByteSlice, Binding>,
-    map!(
-        terminated!(
-            separated_pair!(identifier, ignore_whitespace!(tag!(&b"="[..])), value),
-            line_ending
+fn binding(input: &[u8]) -> IResult<Binding> {
+    map(
+        terminated(
+            separated_pair(
+                identifier,
+                tuple((opt(whitespace), tag("="), opt(whitespace))),
+                value,
+            ),
+            line_ending,
         ),
-        |(name, value)| Binding { name, value }
-    )
-);
+        |(name, value)| Binding { name, value },
+    )(input)
+}
 
 #[cfg(test)]
 #[test]
@@ -346,7 +327,9 @@ fn test_binding() {
     );
 }
 
-named!(bindings<ByteSlice, Vec<Binding>>, many1!(preceded!(indent, binding)));
+fn bindings(input: &[u8]) -> IResult<Vec<Binding>> {
+    many1(preceded(indent, binding))(input)
+}
 
 #[cfg(test)]
 #[test]
@@ -437,16 +420,19 @@ pub struct Rule<'a> {
     pub bindings: Vec<Binding<'a>>,
 }
 
-named!(
-    rule<ByteSlice, Rule>,
-    map!(
-        pair!(
-            delimited!(call!(word, "rule"), ignore_whitespace!(identifier), line_ending),
-            bindings
+fn rule(input: &[u8]) -> IResult<Rule> {
+    map(
+        pair(
+            delimited(
+                word("rule"),
+                delimited(opt(whitespace), identifier, opt(whitespace)),
+                line_ending,
+            ),
+            bindings,
         ),
-        |(name, bindings)| Rule { name, bindings }
-    )
-);
+        |(name, bindings)| Rule { name, bindings },
+    )(input)
+}
 
 // TODO: add test_rule
 
@@ -461,30 +447,49 @@ pub struct Build<'a> {
     pub bindings: Vec<Binding<'a>>,
 }
 
-#[cfg_attr(rustfmt, rustfmt_skip)]
-named!(
-    build<ByteSlice, Build>,
-    do_parse!(
-        outputs: preceded!(call!(word, "build"), paths1) >>
-        implicit_outputs: opt!(preceded!(tag!(&b"|"[..]), paths1)) >>
-        rule: preceded!(tag!(&b":"[..]), ignore_whitespace!(identifier)) >>
-        inputs: paths0 >>
-        implicit_inputs: opt!(preceded!(tag!(&b"|"[..]), paths1)) >>
-        order_only_inputs: opt!(preceded!(tag!(&b"||"[..]), paths1)) >>
-        _newline: line_ending >>
-        bindings: opt!(bindings) >> (
+fn opt_default<I: Clone, O: std::default::Default, E: nom::error::ParseError<I>, F>(
+    f: F,
+) -> impl Fn(I) -> nom::IResult<I, O, E>
+where
+    F: Fn(I) -> nom::IResult<I, O, E>,
+{
+    map(opt(f), Option::unwrap_or_default)
+}
+
+fn build(input: &[u8]) -> IResult<Build> {
+    map(
+        tuple((
+            preceded(word("build"), paths1),
+            opt_default(preceded(tag("|"), paths1)),
+            preceded(tag(":"), delimited(whitespace, identifier, whitespace)),
+            paths0,
+            opt_default(preceded(tag("|"), paths1)),
+            opt_default(preceded(tag("||"), paths1)),
+            line_ending,
+            opt_default(bindings),
+        )),
+        |(
+            outputs,
+            implicit_outputs,
+            rule,
+            inputs,
+            implicit_inputs,
+            order_only_inputs,
+            _newline,
+            bindings,
+        )| {
             Build {
                 outputs,
-                implicit_outputs: implicit_outputs.unwrap_or_else(Vec::new),
+                implicit_outputs,
                 rule,
                 inputs,
-                implicit_inputs: implicit_inputs.unwrap_or_else(Vec::new),
-                order_only_inputs: order_only_inputs.unwrap_or_else(Vec::new),
-                bindings: bindings.unwrap_or_else(Vec::new),
+                implicit_inputs,
+                order_only_inputs,
+                bindings,
             }
-        )
-    )
-);
+        },
+    )(input)
+}
 
 #[cfg(test)]
 #[test]
@@ -561,16 +566,18 @@ pub struct Default<'a> {
     pub targets: Vec<Value<'a>>,
 }
 
-named!(
-    default<ByteSlice, Default>,
-    map!(
-        terminated!(
-            preceded!(call!(word, "default"), ignore_whitespace!(many1!(path))),
-            line_ending
+fn default(input: &[u8]) -> IResult<Default> {
+    map(
+        terminated(
+            preceded(
+                word("default"),
+                delimited(opt(whitespace), paths1, opt(whitespace)),
+            ),
+            line_ending,
         ),
-        |targets| Default { targets }
-    )
-);
+        |targets| Default { targets },
+    )(input)
+}
 
 #[cfg(test)]
 #[test]
@@ -602,20 +609,33 @@ pub struct Include<'a> {
     pub new_scope: bool,
 }
 
-named!(
-    include<ByteSlice, Include>,
-    terminated!(
-        alt!(
-            preceded!(call!(word, "include"), ignore_whitespace!(path)) => {
-                |path| Include { path, new_scope: false }
-            } |
-            preceded!(call!(word, "subninja"), ignore_whitespace!(path)) => {
-                |path| Include { path, new_scope: true }
-            }
-        ),
-        line_ending
-    )
-);
+fn include(input: &[u8]) -> IResult<Include> {
+    terminated(
+        alt((
+            map(
+                preceded(
+                    word("include"),
+                    delimited(opt(whitespace), path, opt(whitespace)),
+                ),
+                |path| Include {
+                    path,
+                    new_scope: false,
+                },
+            ),
+            map(
+                preceded(
+                    word("subninja"),
+                    delimited(opt(whitespace), path, opt(whitespace)),
+                ),
+                |path| Include {
+                    path,
+                    new_scope: true,
+                },
+            ),
+        )),
+        line_ending,
+    )(input)
+}
 
 #[cfg(test)]
 #[test]
@@ -653,28 +673,27 @@ pub struct Pool<'a> {
     pub depth: Value<'a>,
 }
 
-named!(
-    indent<ByteSlice, usize>,
-    map!(is_a!(" "), |data| {
-        data.0.len()
-    })
-);
+fn indent(input: &[u8]) -> IResult<usize> {
+    map(is_a(" "), <[u8]>::len)(input)
+}
 
 #[cfg_attr(rustfmt, rustfmt_skip)]
-named!(pool<ByteSlice, Pool>, do_parse!(
-    name: delimited!(call!(word, "pool"), ignore_whitespace!(identifier), line_ending) >>
-    _indent: indent >>
-    // Technically ninja allows multiple depth values and just takes the last
-    // one.
-    depth: ignore_whitespace!(delimited!(
-        pair!(
-            tag!(&b"depth"[..]), tag!(&b"="[..])
+fn pool(input: &[u8]) -> IResult<Pool> {
+    map(
+        separated_pair(
+            delimited(
+                word("pool"),
+                delimited(opt(whitespace), identifier, opt(whitespace)),
+                line_ending,
+            ),
+            indent,
+            // Technically ninja allows multiple depth values and just takes the
+            // last one.
+            map_opt(binding, |Binding{ name, value }| if name == Identifier("depth") { Some(value) } else { None }),
         ),
-        value,
-        line_ending
-    )) >>
-    ( Pool{ name, depth } )
-));
+        |(name, value)| Pool{ name, depth: value },
+    )(input)
+}
 
 #[cfg(test)]
 #[test]
@@ -694,24 +713,23 @@ fn test_pool() {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub struct Comment<'a>(pub ByteSlice<'a>);
+pub struct Comment<'a>(pub &'a [u8]);
 
-named!(
-    comment<ByteSlice, Comment>,
-    map!(
-        delimited!(tag!(&b"#"[..]), take_while!(|c| c != b'\n'), line_ending),
-        Comment
-    )
-);
+fn comment(input: &[u8]) -> IResult<Comment> {
+    map(
+        delimited(tag("#"), take_while(|c| c != b'\n'), line_ending),
+        Comment,
+    )(input)
+}
 
 #[cfg(test)]
 #[test]
 fn test_comment() {
     test_parse!(
         comment(&b"# this is a comment\n"[..]),
-        Comment(ByteSlice(&b" this is a comment"[..]))
+        Comment(&b" this is a comment"[..])
     );
-    test_parse!(comment(&b"#\n"[..]), Comment(ByteSlice(&b""[..])));
+    test_parse!(comment(&b"#\n"[..]), Comment(&b""[..]));
 }
 
 #[derive(Debug)]
@@ -725,28 +743,27 @@ pub enum Statement<'a> {
     Comment(Comment<'a>),
 }
 
-named!(
-    statement<ByteSlice, Statement>,
-    alt!(
-        rule => { Statement::Rule } |
-        build => { Statement::Build } |
-        binding => { Statement::Binding } |
-        default => { Statement::Default } |
-        include => { Statement::Include } |
-        pool => { Statement::Pool } |
-        comment => { Statement::Comment }
-    )
-);
+fn statement(input: &[u8]) -> IResult<Statement> {
+    alt((
+        map(rule, Statement::Rule),
+        map(build, Statement::Build),
+        map(binding, Statement::Binding),
+        map(default, Statement::Default),
+        map(include, Statement::Include),
+        map(pool, Statement::Pool),
+        map(comment, Statement::Comment),
+    ))(input)
+}
 
 pub struct Statements<'a> {
-    data: ByteSlice<'a>,
-    original_data: ByteSlice<'a>,
+    data: &'a [u8],
+    original_data: &'a [u8],
 }
 
 pub fn parse(data: &[u8]) -> Statements {
     Statements {
-        data: ByteSlice(data),
-        original_data: ByteSlice(data),
+        data: data,
+        original_data: data,
     }
 }
 
@@ -756,7 +773,7 @@ pub struct Error {
 }
 
 impl Error {
-    fn new(_original_data: ByteSlice, _data: ByteSlice, _err: nom::Err<ByteSlice>) -> Error {
+    fn new<T>(_original_data: &[u8], _data: &[u8], _err: nom::Err<T>) -> Error {
         Error {
             message: "syntax error occurred".to_string(),
         }
@@ -778,7 +795,7 @@ impl<'a> Iterator for Statements<'a> {
                 return None;
             }
 
-            let result = alt!(self.data, statement => { Some } | line_ending => { |_| None } );
+            let result = alt((map(statement, Some), map(line_ending, |_| None)))(self.data);
 
             match result {
                 Ok((rest, statement)) => {
@@ -790,7 +807,7 @@ impl<'a> Iterator for Statements<'a> {
                     }
                 }
                 Err(e) => {
-                    let data = mem::replace(&mut self.data, ByteSlice(&b""[..]));
+                    let data = mem::replace(&mut self.data, &b""[..]);
                     return Some(Err(Error::new(self.original_data, data, e)));
                 }
             }
