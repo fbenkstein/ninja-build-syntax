@@ -54,6 +54,17 @@ fn whitespace(input: &[u8]) -> IResult<()> {
     map(many0(alt((tag("$\r\n"), tag("$\n"), tag(" ")))), |_| ())(input)
 }
 
+#[cfg(test)]
+#[test]
+fn test_whitespace() {
+    test_parse!(whitespace(b""), ());
+    test_parse!(whitespace(b"        "), ());
+    test_parse!(whitespace(b"    $\n    "), ());
+    test_parse!(whitespace(b"    $\r\n    "), ());
+    test_parse!(whitespace(b"    \t    "   ), (), b"\t    ");
+    test_parse!(whitespace(b"abc"), (), b"abc");
+}
+
 fn word<'a, Input: 'a>(w: &'a str) -> impl Fn(Input) -> nom::IResult<Input, ()> + 'a
 where
     Input: nom::InputTake + nom::Compare<&'a str> + Clone,
