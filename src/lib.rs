@@ -9,6 +9,7 @@ use nom::{
     sequence::{delimited, pair, preceded, separated_pair, terminated, tuple},
 };
 
+use std::convert::identity;
 use std::ffi::OsStr;
 use std::fmt;
 use std::mem;
@@ -43,11 +44,6 @@ pub fn nonempty_string(s: &[u8]) -> Option<&OsStr> {
     } else {
         None
     }
-}
-
-// TODO: get rid off this function and eliminate empty strings
-fn empty_string() -> &'static OsStr {
-    "".as_ref()
 }
 
 fn maybe_whitespace(input: &[u8]) -> IResult<()> {
@@ -150,24 +146,25 @@ impl<'a> IntoIterator for &'a Value<'a> {
 fn value(input: &[u8]) -> IResult<Value> {
     map(
         many0(alt((
-            map(map_opt(is_not("$\r\n"), nonempty_string), ValuePiece::Plain),
-            map(
-                map_opt(preceded(tag("$"), is_a("$ |:")), string),
-                ValuePiece::Plain,
-            ),
+            map(map_opt(is_not("$\r\n"), nonempty_string), |s| {
+                Some(ValuePiece::Plain(s))
+            }),
+            map(map_opt(preceded(tag("$"), is_a("$ |:")), string), |s| {
+                Some(ValuePiece::Plain(s))
+            }),
             map(
                 preceded(alt((tag("$\n"), tag("$\r\n"))), opt(is_a(" "))),
-                |_| ValuePiece::Plain(empty_string()),
+                |_| None,
             ),
             map(
                 delimited(tag("${"), identifier, tag("}")),
-                |Identifier(x)| ValuePiece::Evaluated(x),
+                |Identifier(x)| Some(ValuePiece::Evaluated(x)),
             ),
             map(preceded(tag("$"), simple_identifier), |Identifier(x)| {
-                ValuePiece::Evaluated(x)
+                Some(ValuePiece::Evaluated(x))
             }),
         ))),
-        Value,
+        |pieces| Value(pieces.into_iter().filter_map(identity).collect()),
     )(input)
 }
 
@@ -194,13 +191,10 @@ fn test_value() {
         value(b"abc$|def"),
         value![plain!(b"abc"), plain!(b"|"), plain!(b"def"),]
     );
-    test_parse!(
-        value(b"abc$\ndef"),
-        value![plain!(b"abc"), plain!(b""), plain!(b"def"),]
-    );
+    test_parse!(value(b"abc$\ndef"), value![plain!(b"abc"), plain!(b"def"),]);
     test_parse!(
         value(b"abc$\n    def"),
-        value![plain!(b"abc"), plain!(b""), plain!(b"def"),]
+        value![plain!(b"abc"), plain!(b"def"),]
     );
     test_parse!(
         value(b"ab${cd}ef"),
@@ -219,27 +213,25 @@ fn test_value() {
 fn path(input: &[u8]) -> IResult<Value> {
     map(
         many1(alt((
-            map(
-                map_opt(is_not("$ :\r\n|\0"), nonempty_string),
-                ValuePiece::Plain,
-            ),
-            map(
-                map_opt(preceded(tag("$"), is_a("$ |:")), string),
-                ValuePiece::Plain,
-            ),
+            map(map_opt(is_not("$ :\r\n|\0"), nonempty_string), |s| {
+                Some(ValuePiece::Plain(s))
+            }),
+            map(map_opt(preceded(tag("$"), is_a("$ |:")), string), |s| {
+                Some(ValuePiece::Plain(s))
+            }),
             map(
                 preceded(alt((tag("$\n"), tag("$\r\n"))), opt(is_a(" "))),
-                |_| ValuePiece::Plain(empty_string()),
+                |_| None,
             ),
             map(
                 delimited(tag("${"), identifier, tag("}")),
-                |Identifier(x)| ValuePiece::Evaluated(x),
+                |Identifier(x)| Some(ValuePiece::Evaluated(x)),
             ),
             map(preceded(tag("$"), simple_identifier), |Identifier(x)| {
-                ValuePiece::Evaluated(x)
+                Some(ValuePiece::Evaluated(x))
             }),
         ))),
-        Value,
+        |pieces| Value(pieces.into_iter().filter_map(identity).collect()),
     )(input)
 }
 
