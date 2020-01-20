@@ -65,6 +65,13 @@ fn test_maybe_whitespace() {
     test_parse!(maybe_whitespace(b"abc"), (), b"abc");
 }
 
+fn maybe_surrounded_by_whitespace<'a, O, F>(f: F) -> impl Fn(&'a [u8]) -> IResult<O>
+where
+    F: Fn(&'a [u8]) -> IResult<O>,
+{
+    delimited(maybe_whitespace, f, maybe_whitespace)
+}
+
 fn word<'a, Input: 'a>(w: &'a str) -> impl Fn(Input) -> nom::IResult<Input, ()> + 'a
 where
     Input: nom::InputTake + nom::Compare<&'a str> + Clone,
@@ -237,17 +244,11 @@ fn path(input: &[u8]) -> IResult<Value> {
 }
 
 fn paths0(input: &[u8]) -> IResult<Vec<Value>> {
-    terminated(
-        many0(preceded(maybe_whitespace, path)),
-        maybe_whitespace,
-    )(input)
+    terminated(many0(preceded(maybe_whitespace, path)), maybe_whitespace)(input)
 }
 
 fn paths1(input: &[u8]) -> IResult<Vec<Value>> {
-    terminated(
-        many1(preceded(maybe_whitespace, path)),
-        maybe_whitespace,
-    )(input)
+    terminated(many1(preceded(maybe_whitespace, path)), maybe_whitespace)(input)
 }
 
 #[cfg(test)]
@@ -442,7 +443,7 @@ fn rule(input: &[u8]) -> IResult<Rule> {
         pair(
             delimited(
                 word("rule"),
-                delimited(maybe_whitespace, identifier, maybe_whitespace),
+                maybe_surrounded_by_whitespace(identifier),
                 line_ending,
             ),
             bindings,
@@ -478,10 +479,7 @@ fn build(input: &[u8]) -> IResult<Build> {
         tuple((
             preceded(word("build"), paths1),
             opt_default(preceded(tag("|"), paths1)),
-            preceded(
-                tag(":"),
-                delimited(maybe_whitespace, identifier, maybe_whitespace),
-            ),
+            preceded(tag(":"), maybe_surrounded_by_whitespace(identifier)),
             paths0,
             opt_default(preceded(tag("|"), paths1)),
             opt_default(preceded(tag("||"), paths1)),
@@ -589,10 +587,7 @@ pub struct Default<'a> {
 fn default(input: &[u8]) -> IResult<Default> {
     map(
         terminated(
-            preceded(
-                word("default"),
-                delimited(maybe_whitespace, paths1, maybe_whitespace),
-            ),
+            preceded(word("default"), maybe_surrounded_by_whitespace(paths1)),
             line_ending,
         ),
         |targets| Default { targets },
@@ -633,20 +628,14 @@ fn include(input: &[u8]) -> IResult<Include> {
     terminated(
         alt((
             map(
-                preceded(
-                    word("include"),
-                    delimited(maybe_whitespace, path, maybe_whitespace),
-                ),
+                preceded(word("include"), maybe_surrounded_by_whitespace(path)),
                 |path| Include {
                     path,
                     new_scope: false,
                 },
             ),
             map(
-                preceded(
-                    word("subninja"),
-                    delimited(maybe_whitespace, path, maybe_whitespace),
-                ),
+                preceded(word("subninja"), maybe_surrounded_by_whitespace(path)),
                 |path| Include {
                     path,
                     new_scope: true,
@@ -703,7 +692,7 @@ fn pool(input: &[u8]) -> IResult<Pool> {
         separated_pair(
             delimited(
                 word("pool"),
-                delimited(maybe_whitespace, identifier, maybe_whitespace),
+                maybe_surrounded_by_whitespace(identifier),
                 line_ending,
             ),
             indent,
