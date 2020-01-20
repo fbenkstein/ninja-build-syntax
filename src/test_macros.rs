@@ -97,7 +97,7 @@ macro_rules! value {
 
 macro_rules! plain {
     ($value:expr) => {
-        $crate::ValuePiece::Plain($crate::string(&$value[..]).unwrap())
+        $crate::ValuePiece::Plain(&$value[..])
     };
 }
 

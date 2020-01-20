@@ -4,13 +4,12 @@ use nom::{
     branch::alt,
     bytes::complete::{is_a, is_not, tag, take_while, take_while1},
     character::{complete::line_ending, is_alphanumeric},
-    combinator::{map, map_opt, opt},
+    combinator::{map, map_opt, opt, verify},
     multi::{many0, many1},
     sequence::{delimited, pair, preceded, separated_pair, terminated, tuple},
 };
 
 use std::convert::identity;
-use std::ffi::OsStr;
 use std::fmt;
 use std::mem;
 use std::result;
@@ -21,30 +20,6 @@ use std::str::from_utf8;
 mod test_macros;
 
 type IResult<'a, T> = nom::IResult<&'a [u8], T>;
-
-#[cfg(unix)]
-pub fn string(s: &[u8]) -> Option<&OsStr> {
-    use std::os::unix::ffi::OsStrExt;
-    Some(OsStr::from_bytes(s))
-}
-
-#[cfg(windows)]
-pub fn string(s: &[u8]) -> Option<&OsStr> {
-    // TODO: disallow non-whitespace control characters
-    if s.iter().all(u8::is_ascii) {
-        Some(from_utf8(s).unwrap().as_ref())
-    } else {
-        None
-    }
-}
-
-pub fn nonempty_string(s: &[u8]) -> Option<&OsStr> {
-    if !s.is_empty() {
-        string(s)
-    } else {
-        None
-    }
-}
 
 fn maybe_whitespace(input: &[u8]) -> IResult<()> {
     map(many0(alt((tag("$\r\n"), tag("$\n"), tag(" ")))), |_| ())(input)
@@ -119,7 +94,7 @@ fn test_identifier() {
 #[derive(PartialEq, Debug, Eq, Clone)]
 pub enum ValuePiece<'a> {
     Evaluated(&'a str),
-    Plain(&'a OsStr),
+    Plain(&'a [u8]),
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -146,10 +121,10 @@ impl<'a> IntoIterator for &'a Value<'a> {
 fn value(input: &[u8]) -> IResult<Value> {
     map(
         many0(alt((
-            map(map_opt(is_not("$\r\n"), nonempty_string), |s| {
+            map(verify(is_not("$\r\n"), |s: &[u8]| !s.is_empty()), |s| {
                 Some(ValuePiece::Plain(s))
             }),
-            map(map_opt(preceded(tag("$"), is_a("$ |:")), string), |s| {
+            map(preceded(tag("$"), is_a("$ |:")), |s| {
                 Some(ValuePiece::Plain(s))
             }),
             map(
@@ -213,10 +188,11 @@ fn test_value() {
 fn path(input: &[u8]) -> IResult<Value> {
     map(
         many1(alt((
-            map(map_opt(is_not("$ :\r\n|\0"), nonempty_string), |s| {
-                Some(ValuePiece::Plain(s))
-            }),
-            map(map_opt(preceded(tag("$"), is_a("$ |:")), string), |s| {
+            map(
+                verify(is_not("$ :\r\n|\0"), |s: &[u8]| !s.is_empty()),
+                |s| Some(ValuePiece::Plain(s)),
+            ),
+            map(preceded(tag("$"), is_a("$ |:")), |s| {
                 Some(ValuePiece::Plain(s))
             }),
             map(
