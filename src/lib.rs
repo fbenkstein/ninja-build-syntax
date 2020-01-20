@@ -238,15 +238,15 @@ fn path(input: &[u8]) -> IResult<Value> {
 
 fn paths0(input: &[u8]) -> IResult<Vec<Value>> {
     terminated(
-        many0(preceded(opt(maybe_whitespace), path)),
-        opt(maybe_whitespace),
+        many0(preceded(maybe_whitespace, path)),
+        maybe_whitespace,
     )(input)
 }
 
 fn paths1(input: &[u8]) -> IResult<Vec<Value>> {
     terminated(
-        many1(preceded(opt(maybe_whitespace), path)),
-        opt(maybe_whitespace),
+        many1(preceded(maybe_whitespace, path)),
+        maybe_whitespace,
     )(input)
 }
 
@@ -278,7 +278,7 @@ fn binding(input: &[u8]) -> IResult<Binding> {
         terminated(
             separated_pair(
                 identifier,
-                tuple((opt(maybe_whitespace), tag("="), opt(maybe_whitespace))),
+                tuple((maybe_whitespace, tag("="), maybe_whitespace)),
                 value,
             ),
             line_ending,
@@ -442,7 +442,7 @@ fn rule(input: &[u8]) -> IResult<Rule> {
         pair(
             delimited(
                 word("rule"),
-                delimited(opt(maybe_whitespace), identifier, opt(maybe_whitespace)),
+                delimited(maybe_whitespace, identifier, maybe_whitespace),
                 line_ending,
             ),
             bindings,
@@ -591,7 +591,7 @@ fn default(input: &[u8]) -> IResult<Default> {
         terminated(
             preceded(
                 word("default"),
-                delimited(opt(maybe_whitespace), paths1, opt(maybe_whitespace)),
+                delimited(maybe_whitespace, paths1, maybe_whitespace),
             ),
             line_ending,
         ),
@@ -635,7 +635,7 @@ fn include(input: &[u8]) -> IResult<Include> {
             map(
                 preceded(
                     word("include"),
-                    delimited(opt(maybe_whitespace), path, opt(maybe_whitespace)),
+                    delimited(maybe_whitespace, path, maybe_whitespace),
                 ),
                 |path| Include {
                     path,
@@ -645,7 +645,7 @@ fn include(input: &[u8]) -> IResult<Include> {
             map(
                 preceded(
                     word("subninja"),
-                    delimited(opt(maybe_whitespace), path, opt(maybe_whitespace)),
+                    delimited(maybe_whitespace, path, maybe_whitespace),
                 ),
                 |path| Include {
                     path,
@@ -703,7 +703,7 @@ fn pool(input: &[u8]) -> IResult<Pool> {
         separated_pair(
             delimited(
                 word("pool"),
-                delimited(opt(maybe_whitespace), identifier, opt(maybe_whitespace)),
+                delimited(maybe_whitespace, identifier, maybe_whitespace),
                 line_ending,
             ),
             indent,
