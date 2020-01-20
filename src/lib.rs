@@ -50,19 +50,19 @@ fn empty_string() -> &'static OsStr {
     "".as_ref()
 }
 
-fn whitespace(input: &[u8]) -> IResult<()> {
+fn maybe_whitespace(input: &[u8]) -> IResult<()> {
     map(many0(alt((tag("$\r\n"), tag("$\n"), tag(" ")))), |_| ())(input)
 }
 
 #[cfg(test)]
 #[test]
-fn test_whitespace() {
-    test_parse!(whitespace(b""), ());
-    test_parse!(whitespace(b"        "), ());
-    test_parse!(whitespace(b"    $\n    "), ());
-    test_parse!(whitespace(b"    $\r\n    "), ());
-    test_parse!(whitespace(b"    \t    "   ), (), b"\t    ");
-    test_parse!(whitespace(b"abc"), (), b"abc");
+fn test_maybe_whitespace() {
+    test_parse!(maybe_whitespace(b""), ());
+    test_parse!(maybe_whitespace(b"        "), ());
+    test_parse!(maybe_whitespace(b"    $\n    "), ());
+    test_parse!(maybe_whitespace(b"    $\r\n    "), ());
+    test_parse!(maybe_whitespace(b"    \t    "), (), b"\t    ");
+    test_parse!(maybe_whitespace(b"abc"), (), b"abc");
 }
 
 fn word<'a, Input: 'a>(w: &'a str) -> impl Fn(Input) -> nom::IResult<Input, ()> + 'a
@@ -237,11 +237,17 @@ fn path(input: &[u8]) -> IResult<Value> {
 }
 
 fn paths0(input: &[u8]) -> IResult<Vec<Value>> {
-    terminated(many0(preceded(opt(whitespace), path)), opt(whitespace))(input)
+    terminated(
+        many0(preceded(opt(maybe_whitespace), path)),
+        opt(maybe_whitespace),
+    )(input)
 }
 
 fn paths1(input: &[u8]) -> IResult<Vec<Value>> {
-    terminated(many1(preceded(opt(whitespace), path)), opt(whitespace))(input)
+    terminated(
+        many1(preceded(opt(maybe_whitespace), path)),
+        opt(maybe_whitespace),
+    )(input)
 }
 
 #[cfg(test)]
@@ -272,7 +278,7 @@ fn binding(input: &[u8]) -> IResult<Binding> {
         terminated(
             separated_pair(
                 identifier,
-                tuple((opt(whitespace), tag("="), opt(whitespace))),
+                tuple((opt(maybe_whitespace), tag("="), opt(maybe_whitespace))),
                 value,
             ),
             line_ending,
@@ -436,7 +442,7 @@ fn rule(input: &[u8]) -> IResult<Rule> {
         pair(
             delimited(
                 word("rule"),
-                delimited(opt(whitespace), identifier, opt(whitespace)),
+                delimited(opt(maybe_whitespace), identifier, opt(maybe_whitespace)),
                 line_ending,
             ),
             bindings,
@@ -472,7 +478,10 @@ fn build(input: &[u8]) -> IResult<Build> {
         tuple((
             preceded(word("build"), paths1),
             opt_default(preceded(tag("|"), paths1)),
-            preceded(tag(":"), delimited(whitespace, identifier, whitespace)),
+            preceded(
+                tag(":"),
+                delimited(maybe_whitespace, identifier, maybe_whitespace),
+            ),
             paths0,
             opt_default(preceded(tag("|"), paths1)),
             opt_default(preceded(tag("||"), paths1)),
@@ -582,7 +591,7 @@ fn default(input: &[u8]) -> IResult<Default> {
         terminated(
             preceded(
                 word("default"),
-                delimited(opt(whitespace), paths1, opt(whitespace)),
+                delimited(opt(maybe_whitespace), paths1, opt(maybe_whitespace)),
             ),
             line_ending,
         ),
@@ -626,7 +635,7 @@ fn include(input: &[u8]) -> IResult<Include> {
             map(
                 preceded(
                     word("include"),
-                    delimited(opt(whitespace), path, opt(whitespace)),
+                    delimited(opt(maybe_whitespace), path, opt(maybe_whitespace)),
                 ),
                 |path| Include {
                     path,
@@ -636,7 +645,7 @@ fn include(input: &[u8]) -> IResult<Include> {
             map(
                 preceded(
                     word("subninja"),
-                    delimited(opt(whitespace), path, opt(whitespace)),
+                    delimited(opt(maybe_whitespace), path, opt(maybe_whitespace)),
                 ),
                 |path| Include {
                     path,
@@ -694,7 +703,7 @@ fn pool(input: &[u8]) -> IResult<Pool> {
         separated_pair(
             delimited(
                 word("pool"),
-                delimited(opt(whitespace), identifier, opt(whitespace)),
+                delimited(opt(maybe_whitespace), identifier, opt(maybe_whitespace)),
                 line_ending,
             ),
             indent,
