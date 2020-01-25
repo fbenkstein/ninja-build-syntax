@@ -1,4 +1,6 @@
-use failure::Fail;
+use std::convert::identity;
+use std::result;
+use std::str::from_utf8;
 
 use nom::{
     branch::alt,
@@ -8,12 +10,6 @@ use nom::{
     multi::{many0, many1},
     sequence::{delimited, pair, preceded, separated_pair, terminated, tuple},
 };
-
-use std::convert::identity;
-use std::fmt;
-use std::mem;
-use std::result;
-use std::str::from_utf8;
 
 #[cfg(test)]
 #[macro_use]
@@ -734,34 +730,28 @@ fn statement(input: &[u8]) -> IResult<Statement> {
 
 pub struct Statements<'a> {
     data: &'a [u8],
-    original_data: &'a [u8],
 }
 
 pub fn parse(data: &[u8]) -> Statements {
-    Statements {
-        data: data,
-        original_data: data,
-    }
+    Statements { data: data }
 }
 
-#[derive(Debug, Fail)]
-pub struct Error {
-    message: String,
-}
+#[derive(Debug)]
+pub struct Error(());
 
 impl Error {
-    fn new<T>(_original_data: &[u8], _data: &[u8], _err: nom::Err<T>) -> Error {
-        Error {
-            message: "syntax error occurred".to_string(),
-        }
+    fn new() -> Self {
+        Self(())
     }
 }
 
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str(&self.message)
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "syntax error")
     }
 }
+
+impl std::error::Error for Error {}
 
 impl<'a> Iterator for Statements<'a> {
     type Item = result::Result<Statement<'a>, Error>;
@@ -783,9 +773,9 @@ impl<'a> Iterator for Statements<'a> {
                         return Some(Ok(statement));
                     }
                 }
-                Err(e) => {
-                    let data = mem::replace(&mut self.data, &b""[..]);
-                    return Some(Err(Error::new(self.original_data, data, e)));
+                Err(_) => {
+                    self.data = &b""[..];
+                    return Some(Err(Error::new()));
                 }
             }
         }

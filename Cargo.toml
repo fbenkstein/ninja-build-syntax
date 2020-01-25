@@ -6,7 +6,6 @@ edition = "2018"
 description = "Parser for ninja's manifest file format, i.e. `ninja.build` files."
 
 [dependencies]
-failure = "0.1"
 nom = "5.0"
 
 [dev-dependencies]
