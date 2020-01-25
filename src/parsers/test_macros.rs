@@ -56,12 +56,13 @@ pub fn test_parse_impl<T: PartialEq<T> + ::std::fmt::Debug>(
     }
 }
 
+#[macro_export]
 macro_rules! test_parse {
     ($parse_function:ident($parse_input:expr), $expected_result:expr) => {
         test_parse!($parse_function($parse_input), $expected_result, b"")
     };
     ($parse_function:ident($parse_input:expr), $expected_result:expr, $rest:expr) => {
-        $crate::test_macros::test_parse_impl(
+        $crate::parsers::test_macros::test_parse_impl(
             $expected_result,
             &$rest[..],
             &$parse_input[..],
@@ -97,13 +98,13 @@ macro_rules! value {
 
 macro_rules! plain {
     ($value:expr) => {
-        $crate::ValuePiece::Plain(&$value[..])
+        $crate::parsers::ValuePiece::Plain(&$value[..])
     };
 }
 
 macro_rules! evaluated {
     ($value:expr) => {
-        $crate::ValuePiece::Evaluated(&$value[..])
+        $crate::parsers::ValuePiece::Evaluated(&$value[..])
     };
 }
 
