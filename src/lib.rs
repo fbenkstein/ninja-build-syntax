@@ -4,7 +4,7 @@ mod statements;
 
 pub use {
     error::Error,
-    parsers::{Binding, Build, Comment, Default, Include, Pool, Rule},
+    parsers::{Binding, Build, Comment, Default, Include, Pool, Rule, Statement},
     statements::parse,
 };
 
