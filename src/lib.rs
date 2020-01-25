@@ -11,6 +11,10 @@ use nom::{
     sequence::{delimited, pair, preceded, separated_pair, terminated, tuple},
 };
 
+mod error;
+
+pub use error::Error;
+
 #[cfg(test)]
 #[macro_use]
 mod test_macros;
@@ -735,23 +739,6 @@ pub struct Statements<'a> {
 pub fn parse(data: &[u8]) -> Statements {
     Statements { data: data }
 }
-
-#[derive(Debug)]
-pub struct Error(());
-
-impl Error {
-    fn new() -> Self {
-        Self(())
-    }
-}
-
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "syntax error")
-    }
-}
-
-impl std::error::Error for Error {}
 
 impl<'a> Iterator for Statements<'a> {
     type Item = result::Result<Statement<'a>, Error>;
