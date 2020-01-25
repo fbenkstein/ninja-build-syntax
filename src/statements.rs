@@ -5,38 +5,30 @@ use crate::{
     parsers::{statement, Statement},
 };
 
-pub struct Statements<'a> {
+struct Statements<'a> {
     data: &'a [u8],
 }
 
-pub fn parse(data: &[u8]) -> Statements {
-    Statements { data: data }
+pub fn parse(data: &[u8]) -> impl Iterator<Item = Result<Statement, Error>> {
+    Statements { data }.filter_map(|item| item.transpose())
 }
 
 impl<'a> Iterator for Statements<'a> {
-    type Item = Result<Statement<'a>, Error>;
+    type Item = Result<Option<Statement<'a>>, Error>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            if self.data.is_empty() {
-                return None;
+        if self.data.is_empty() {
+            return None;
+        };
+
+        match alt((map(statement, Some), map(line_ending, |_| None)))(self.data) {
+            Ok((rest, item)) => {
+                self.data = rest;
+                Some(Ok(item))
             }
-
-            let result = alt((map(statement, Some), map(line_ending, |_| None)))(self.data);
-
-            match result {
-                Ok((rest, statement)) => {
-                    self.data = rest;
-
-                    // Loop for empty lines.
-                    if let Some(statement) = statement {
-                        return Some(Ok(statement));
-                    }
-                }
-                Err(_) => {
-                    self.data = &b""[..];
-                    return Some(Err(Error::new()));
-                }
+            Err(_) => {
+                self.data = &b""[..];
+                Some(Err(Error::new()))
             }
         }
     }
