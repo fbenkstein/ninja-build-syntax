@@ -816,14 +816,16 @@ pub enum Statement<'a> {
     Comment(Comment<'a>),
 }
 
-pub(crate) fn statement(input: &[u8]) -> IResult<Statement> {
-    alt((
-        map(rule, Statement::Rule),
-        map(build, Statement::Build),
-        map(binding, Statement::Binding),
-        map(default, Statement::Default),
-        map(include, Statement::Include),
-        map(pool, Statement::Pool),
-        map(comment, Statement::Comment),
-    ))(input)
+impl Statement<'_> {
+    pub(crate) fn parse(input: &[u8]) -> IResult<Statement> {
+        alt((
+            map(rule, Statement::Rule),
+            map(build, Statement::Build),
+            map(binding, Statement::Binding),
+            map(default, Statement::Default),
+            map(include, Statement::Include),
+            map(pool, Statement::Pool),
+            map(comment, Statement::Comment),
+        ))(input)
+    }
 }

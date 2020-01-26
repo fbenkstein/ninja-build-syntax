@@ -1,9 +1,6 @@
 use nom::{branch::alt, character::complete::line_ending, combinator::map};
 
-use crate::{
-    error::Error,
-    parsers::{statement, Statement},
-};
+use crate::{error::Error, parsers::Statement};
 
 struct Statements<'a> {
     data: &'a [u8],
@@ -21,7 +18,7 @@ impl<'a> Iterator for Statements<'a> {
             return None;
         };
 
-        match alt((map(statement, Some), map(line_ending, |_| None)))(self.data) {
+        match alt((map(Statement::parse, Some), map(line_ending, |_| None)))(self.data) {
             Ok((rest, item)) => {
                 self.data = rest;
                 Some(Ok(item))
