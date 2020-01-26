@@ -257,23 +257,26 @@ pub struct Binding<'a> {
     pub value: Value<'a>,
 }
 
-fn binding(input: &[u8]) -> IResult<Binding> {
-    map(
-        terminated(
-            separated_pair(
-                identifier,
-                tuple((maybe_whitespace, tag("="), maybe_whitespace)),
-                value,
+impl Binding<'_> {
+    fn parse(input: &[u8]) -> IResult<Binding> {
+        map(
+            terminated(
+                separated_pair(
+                    identifier,
+                    tuple((maybe_whitespace, tag("="), maybe_whitespace)),
+                    value,
+                ),
+                line_ending,
             ),
-            line_ending,
-        ),
-        |(name, value)| Binding { name, value },
-    )(input)
+            |(name, value)| Binding { name, value },
+        )(input)
+    }
 }
 
 #[cfg(test)]
 #[test]
 fn test_binding() {
+    let binding = Binding::parse;
     test_parse!(
         binding(b"abc=def\n"),
         Binding {
@@ -329,7 +332,7 @@ fn test_binding() {
 }
 
 fn bindings(input: &[u8]) -> IResult<Vec<Binding>> {
-    many1(preceded(indent, binding))(input)
+    many1(preceded(indent, Binding::parse))(input)
 }
 
 #[cfg(test)]
@@ -430,18 +433,20 @@ pub struct Rule<'a> {
     pub bindings: Vec<Binding<'a>>,
 }
 
-fn rule(input: &[u8]) -> IResult<Rule> {
-    map(
-        pair(
-            delimited(
-                word("rule"),
-                maybe_surrounded_by_whitespace(identifier),
-                line_ending,
+impl Rule<'_> {
+    fn parse(input: &[u8]) -> IResult<Rule> {
+        map(
+            pair(
+                delimited(
+                    word("rule"),
+                    maybe_surrounded_by_whitespace(identifier),
+                    line_ending,
+                ),
+                bindings,
             ),
-            bindings,
-        ),
-        |(name, bindings)| Rule { name, bindings },
-    )(input)
+            |(name, bindings)| Rule { name, bindings },
+        )(input)
+    }
 }
 
 // TODO: add test_rule
@@ -506,44 +511,47 @@ where
     map(opt(f), Option::unwrap_or_default)
 }
 
-fn build(input: &[u8]) -> IResult<Build> {
-    map(
-        tuple((
-            preceded(word("build"), paths1),
-            opt_default(preceded(tag("|"), paths1)),
-            preceded(tag(":"), maybe_surrounded_by_whitespace(identifier)),
-            paths0,
-            opt_default(preceded(tag("|"), paths1)),
-            opt_default(preceded(tag("||"), paths1)),
-            line_ending,
-            opt_default(bindings),
-        )),
-        |(
-            outputs,
-            implicit_outputs,
-            rule,
-            inputs,
-            implicit_inputs,
-            order_only_inputs,
-            _newline,
-            bindings,
-        )| {
-            Build {
+impl Build<'_> {
+    fn parse(input: &[u8]) -> IResult<Build> {
+        map(
+            tuple((
+                preceded(word("build"), paths1),
+                opt_default(preceded(tag("|"), paths1)),
+                preceded(tag(":"), maybe_surrounded_by_whitespace(identifier)),
+                paths0,
+                opt_default(preceded(tag("|"), paths1)),
+                opt_default(preceded(tag("||"), paths1)),
+                line_ending,
+                opt_default(bindings),
+            )),
+            |(
                 outputs,
                 implicit_outputs,
                 rule,
                 inputs,
                 implicit_inputs,
                 order_only_inputs,
+                _newline,
                 bindings,
-            }
-        },
-    )(input)
+            )| {
+                Build {
+                    outputs,
+                    implicit_outputs,
+                    rule,
+                    inputs,
+                    implicit_inputs,
+                    order_only_inputs,
+                    bindings,
+                }
+            },
+        )(input)
+    }
 }
 
 #[cfg(test)]
 #[test]
 fn test_build() {
+    let build = Build::parse;
     test_parse!(
         build(b"build foo.o:cc foo.c\n"),
         Build {
@@ -621,19 +629,22 @@ pub struct Default<'a> {
     pub targets: Vec<Value<'a>>,
 }
 
-fn default(input: &[u8]) -> IResult<Default> {
-    map(
-        terminated(
-            preceded(word("default"), maybe_surrounded_by_whitespace(paths1)),
-            line_ending,
-        ),
-        |targets| Default { targets },
-    )(input)
+impl<'a> Default<'a> {
+    fn parse(input: &[u8]) -> IResult<Default> {
+        map(
+            terminated(
+                preceded(word("default"), maybe_surrounded_by_whitespace(paths1)),
+                line_ending,
+            ),
+            |targets| Default { targets },
+        )(input)
+    }
 }
 
 #[cfg(test)]
 #[test]
 fn test_default() {
+    let default = Default::parse;
     test_parse!(
         default(b"default all\n"),
         Default {
@@ -668,31 +679,34 @@ pub struct Include<'a> {
     pub new_scope: bool,
 }
 
-fn include(input: &[u8]) -> IResult<Include> {
-    terminated(
-        alt((
-            map(
-                preceded(word("include"), maybe_surrounded_by_whitespace(path)),
-                |path| Include {
-                    path,
-                    new_scope: false,
-                },
-            ),
-            map(
-                preceded(word("subninja"), maybe_surrounded_by_whitespace(path)),
-                |path| Include {
-                    path,
-                    new_scope: true,
-                },
-            ),
-        )),
-        line_ending,
-    )(input)
+impl<'a> Include<'a> {
+    fn parse(input: &[u8]) -> IResult<Include> {
+        terminated(
+            alt((
+                map(
+                    preceded(word("include"), maybe_surrounded_by_whitespace(path)),
+                    |path| Include {
+                        path,
+                        new_scope: false,
+                    },
+                ),
+                map(
+                    preceded(word("subninja"), maybe_surrounded_by_whitespace(path)),
+                    |path| Include {
+                        path,
+                        new_scope: true,
+                    },
+                ),
+            )),
+            line_ending,
+        )(input)
+    }
 }
 
 #[cfg(test)]
 #[test]
 fn test_include() {
+    let include = Include::parse;
     test_parse!(
         include(b"include rules.ninja\n"),
         Include {
@@ -735,27 +749,35 @@ fn indent(input: &[u8]) -> IResult<usize> {
     map(is_a(" "), <[u8]>::len)(input)
 }
 
-#[cfg_attr(rustfmt, rustfmt_skip)]
-fn pool(input: &[u8]) -> IResult<Pool> {
-    map(
-        separated_pair(
-            delimited(
-                word("pool"),
-                maybe_surrounded_by_whitespace(identifier),
-                line_ending,
+impl<'a> Pool<'a> {
+    fn parse(input: &[u8]) -> IResult<Pool> {
+        map(
+            separated_pair(
+                delimited(
+                    word("pool"),
+                    maybe_surrounded_by_whitespace(identifier),
+                    line_ending,
+                ),
+                indent,
+                // Technically ninja allows multiple depth values and just takes the
+                // last one.
+                map_opt(Binding::parse, |Binding { name, value }| {
+                    if name == Identifier("depth") {
+                        Some(value)
+                    } else {
+                        None
+                    }
+                }),
             ),
-            indent,
-            // Technically ninja allows multiple depth values and just takes the
-            // last one.
-            map_opt(binding, |Binding{ name, value }| if name == Identifier("depth") { Some(value) } else { None }),
-        ),
-        |(name, value)| Pool{ name, depth: value },
-    )(input)
+            |(name, value)| Pool { name, depth: value },
+        )(input)
+    }
 }
 
 #[cfg(test)]
 #[test]
 fn test_pool() {
+    let pool = Pool::parse;
     test_parse!(
         pool(b"pool link\n    depth = 3\n"),
         Pool {
@@ -776,16 +798,19 @@ fn test_pool() {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Comment<'a>(pub &'a [u8]);
 
-fn comment(input: &[u8]) -> IResult<Comment> {
-    map(
-        delimited(tag("#"), take_while(|c| c != b'\n'), line_ending),
-        Comment,
-    )(input)
+impl<'a> Comment<'a> {
+    fn parse(input: &[u8]) -> IResult<Comment> {
+        map(
+            delimited(tag("#"), take_while(|c| c != b'\n'), line_ending),
+            Comment,
+        )(input)
+    }
 }
 
 #[cfg(test)]
 #[test]
 fn test_comment() {
+    let comment = Comment::parse;
     test_parse!(
         comment(&b"# this is a comment\n"[..]),
         Comment(&b" this is a comment"[..])
@@ -819,13 +844,13 @@ pub enum Statement<'a> {
 impl Statement<'_> {
     pub(crate) fn parse(input: &[u8]) -> IResult<Statement> {
         alt((
-            map(rule, Statement::Rule),
-            map(build, Statement::Build),
-            map(binding, Statement::Binding),
-            map(default, Statement::Default),
-            map(include, Statement::Include),
-            map(pool, Statement::Pool),
-            map(comment, Statement::Comment),
+            map(Rule::parse, Statement::Rule),
+            map(Build::parse, Statement::Build),
+            map(Binding::parse, Statement::Binding),
+            map(Default::parse, Statement::Default),
+            map(Include::parse, Statement::Include),
+            map(Pool::parse, Statement::Pool),
+            map(Comment::parse, Statement::Comment),
         ))(input)
     }
 }
