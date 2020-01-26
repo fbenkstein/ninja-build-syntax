@@ -102,9 +102,9 @@ macro_rules! plain {
     };
 }
 
-macro_rules! evaluated {
+macro_rules! reference {
     ($value:expr) => {
-        $crate::parsers::ValuePiece::Evaluated(&$value[..])
+        $crate::parsers::ValuePiece::Reference(&$value[..])
     };
 }
 

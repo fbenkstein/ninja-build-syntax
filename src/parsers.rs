@@ -56,6 +56,9 @@ fn is_identifier_character(c: u8) -> bool {
     is_simple_identifier_character(c) || c == b'.'
 }
 
+/// Identifier.
+///
+/// Used for variable names, rule names and pool names.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Identifier<'a>(pub &'a str);
 
@@ -86,14 +89,23 @@ fn test_identifier() {
     test_parse_error!(identifier(b""));
 }
 
+/// Piece of a value.
 #[derive(PartialEq, Debug, Eq, Clone)]
 pub enum ValuePiece<'a> {
-    Evaluated(&'a str),
+    /// Reference to a variable.
+    Reference(&'a str),
+    /// Plain value.
     Plain(&'a [u8]),
 }
 
+/// An unevaluated value.
+///
+/// Used for variable values and paths. A `Value` can contain references to
+/// variables in which case it's represented as multiple pieces, plain ones and
+/// evaluated ones. To get the evaluated value of a `Value` the plain pieces and
+/// variable references must be concatenated.
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub struct Value<'a>(pub Vec<ValuePiece<'a>>);
+pub struct Value<'a>(Vec<ValuePiece<'a>>);
 
 impl<'a> IntoIterator for Value<'a> {
     type Item = ValuePiece<'a>;
@@ -128,10 +140,10 @@ fn value(input: &[u8]) -> IResult<Value> {
             ),
             map(
                 delimited(tag("${"), identifier, tag("}")),
-                |Identifier(x)| Some(ValuePiece::Evaluated(x)),
+                |Identifier(x)| Some(ValuePiece::Reference(x)),
             ),
             map(preceded(tag("$"), simple_identifier), |Identifier(x)| {
-                Some(ValuePiece::Evaluated(x))
+                Some(ValuePiece::Reference(x))
             }),
         ))),
         |pieces| Value(pieces.into_iter().filter_map(identity).collect()),
@@ -168,11 +180,11 @@ fn test_value() {
     );
     test_parse!(
         value(b"ab${cd}ef"),
-        value![plain!(b"ab"), evaluated!("cd"), plain!(b"ef"),]
+        value![plain!(b"ab"), reference!("cd"), plain!(b"ef"),]
     );
     test_parse!(
         value(b"abc$def.ghi"),
-        value![plain!(b"abc"), evaluated!("def"), plain!(b".ghi"),]
+        value![plain!(b"abc"), reference!("def"), plain!(b".ghi"),]
     );
     test_parse!(value(b"abc$/def"), value![plain!(b"abc")], &b"$/def");
     test_parse!(value(b"a | b"), value![plain!(b"a | b")]);
@@ -196,10 +208,10 @@ fn path(input: &[u8]) -> IResult<Value> {
             ),
             map(
                 delimited(tag("${"), identifier, tag("}")),
-                |Identifier(x)| Some(ValuePiece::Evaluated(x)),
+                |Identifier(x)| Some(ValuePiece::Reference(x)),
             ),
             map(preceded(tag("$"), simple_identifier), |Identifier(x)| {
-                Some(ValuePiece::Evaluated(x))
+                Some(ValuePiece::Reference(x))
             }),
         ))),
         |pieces| Value(pieces.into_iter().filter_map(identity).collect()),
@@ -231,9 +243,17 @@ fn test_path() {
     test_parse!(paths0(b"foo.c\n"), vec![value![plain!(b"foo.c")]], b"\n");
 }
 
+/// Variable assignment.
+///
+/// Example:
+/// ```notrust
+/// a = 1
+/// ```
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Binding<'a> {
+    /// Left-hand side of the assignment.
     pub name: Identifier<'a>,
+    /// Right-hand side of the assignment.
     pub value: Value<'a>,
 }
 
@@ -288,7 +308,7 @@ fn test_binding() {
         binding(b"abc = def $ghi\n"),
         Binding {
             name: id!("abc"),
-            value: value![plain!(b"def "), evaluated!("ghi")],
+            value: value![plain!(b"def "), reference!("ghi")],
         }
     );
     test_parse!(
@@ -342,7 +362,7 @@ fn test_bindings() {
             },
             Binding {
                 name: id!("x"),
-                value: value![evaluated!("y")],
+                value: value![reference!("y")],
             },
         ]
     );
@@ -365,7 +385,7 @@ fn test_bindings() {
             },
             Binding {
                 name: id!("x"),
-                value: value![evaluated!("y")],
+                value: value![reference!("y")],
             },
         ]
     );
@@ -388,16 +408,25 @@ fn test_bindings() {
             },
             Binding {
                 name: id!("x"),
-                value: value![evaluated!("y")],
+                value: value![reference!("y")],
             },
         ]
     );
     test_parse_error!(bindings(b"a = b\n"));
 }
 
+/// Rule definition.
+///
+/// This defines the command to execute to produce the outputs of a `build`
+/// instruction.
 #[derive(Debug)]
 pub struct Rule<'a> {
+    /// Rule name.
     pub name: Identifier<'a>,
+    /// Rule variables.
+    ///
+    /// Only certain variable names are allowed here while some are required.
+    /// Please refer to the ninja documentation.
     pub bindings: Vec<Binding<'a>>,
 }
 
@@ -417,14 +446,54 @@ fn rule(input: &[u8]) -> IResult<Rule> {
 
 // TODO: add test_rule
 
+/// Build instruction.
+///
+/// The build instructions describe commands that have to be executed in order
+/// to produce the outputs. They are called "edges" in ninja jargon while the
+/// inputs and outputs are called "nodes".
+///
+/// Example:
+/// ```notrust
+/// build foo.o : c foo.c || generated_header.h
+///   cflags = -DHAVE_BAR=1
+/// ```
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Build<'a> {
+    /// Outputs.
+    ///
+    /// This is what the build instruction produces. There can be many outputs
+    /// but having at least one is mandatory. These are populated into the
+    /// implicit `$out` variable by ninja.
     pub outputs: Vec<Value<'a>>,
+    /// Implicit outputs.
+    ///
+    /// Also produced by the build instruction. The difference to the `outputs`
+    /// is that they are optional and are not populated into the `$out` variable
+    /// by ninja.
     pub implicit_outputs: Vec<Value<'a>>,
+    /// Rule name.
+    ///
+    /// The name of the rule that is used to generate the command to execute to
+    /// generate an output.
     pub rule: Identifier<'a>,
+    /// Inputs.
+    ///
+    /// These are used to produce the outputs. During rebuilding when any of
+    /// these are considered out-of-date the outputs will have to rebuild. They
+    /// are populated into the `$in` variable by ninja.
     pub inputs: Vec<Value<'a>>,
+    /// Implicit inputs.
+    ///
+    /// Similar to inputs but not populated into the `$in` variable by ninja.
     pub implicit_inputs: Vec<Value<'a>>,
+    /// Order-only inputs.
+    ///
+    /// These are inputs that have to exist for this build instruction to run.
+    /// They are not checked for being up-to-date when rebuilding.
     pub order_only_inputs: Vec<Value<'a>>,
+    /// Variable assignments.
+    ///
+    /// These can be used to customize the commands set forth by the rule.
     pub bindings: Vec<Binding<'a>>,
 }
 
@@ -542,8 +611,13 @@ build foo.o | foo.o.d foo.s : cc foo.c | foo.h || bar.so
     );
 }
 
+/// Default instruction.
+///
+/// Defines the targets to build when no arguments are given to the `ninja`
+/// command.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Default<'a> {
+    /// Default targets.
     pub targets: Vec<Value<'a>>,
 }
 
@@ -574,13 +648,20 @@ fn test_default() {
             targets: vec![
                 value![plain!(b"all")],
                 value![plain!(b"nothing")],
-                value![evaluated!("special")],
+                value![reference!("special")],
                 value![plain!(b"with"), plain!(b" "), plain!(b"space")],
             ],
         }
     );
 }
 
+/// Include instruction.
+///
+/// Instructs ninja to include another file. This comes in two flavors `include`
+/// and `subninja`. `include` instructs ninja to include a file as-is while
+/// `subninja` instructs ninja to open another "scope" such that rule
+/// definitions and variable bindings are not propagated up to the file that
+/// contains the `subninja` instruction.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Include<'a> {
     pub path: Value<'a>,
@@ -622,7 +703,7 @@ fn test_include() {
     test_parse!(
         include(b"include $dir/rules.ninja\n"),
         Include {
-            path: value![evaluated!("dir"), plain!(b"/rules.ninja"),],
+            path: value![reference!("dir"), plain!(b"/rules.ninja"),],
             new_scope: false,
         }
     );
@@ -639,9 +720,14 @@ fn test_include() {
     test_parse_error!(include(b"subninjarules.ninja\n"));
 }
 
+/// Pool definition.
+///
+/// A pool definition is used to limit parallel execution of build commands.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Pool<'a> {
+    /// Pool name.
     pub name: Identifier<'a>,
+    /// Pool depth.
     pub depth: Value<'a>,
 }
 
@@ -684,6 +770,9 @@ fn test_pool() {
     test_parse_error!(pool(b"pool link\ndepth = 3\n"));
 }
 
+/// Comment.
+///
+/// A single comment line, that is everything after a `#`.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Comment<'a>(pub &'a [u8]);
 
@@ -704,14 +793,26 @@ fn test_comment() {
     test_parse!(comment(&b"#\n"[..]), Comment(&b""[..]));
 }
 
+/// Statement.
+///
+/// Sum type of any of the statements that are allowed in a ninja file. Note
+/// that this doesn't include the empty statement consisting of a single empty
+/// line.
 #[derive(Debug)]
 pub enum Statement<'a> {
+    /// Rule definition.
     Rule(Rule<'a>),
+    /// Build instruction.
     Build(Build<'a>),
+    /// Variable definition.
     Binding(Binding<'a>),
+    /// Default instruction.
     Default(Default<'a>),
+    /// Include instruction.
     Include(Include<'a>),
+    /// Pool definition.
     Pool(Pool<'a>),
+    /// Comment.
     Comment(Comment<'a>),
 }
 
