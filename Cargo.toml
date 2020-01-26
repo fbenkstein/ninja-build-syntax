@@ -1,12 +1,13 @@
 [package]
 name = "ninja-build-syntax"
-version = "0.0.1"
+version = "0.0.2"
 authors = ["Frank Benkstein <frank@benkstein.net>"]
 edition = "2018"
 description = "Parser for ninja's manifest file format, i.e. `ninja.build` files."
 repository = "https://github.com/fbenkstein/ninja-build-syntax"
-documentation =  "https://docs.rs/ninja-build-syntax"
+documentation =  "https://docs.rs/ninja-build-syntax/"
 license-file = "LICENSE"
+license = "MIT"
 
 [dependencies]
 nom = "5.0"
